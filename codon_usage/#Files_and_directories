@@ -1,0 +1,70 @@
+More complete descriptions and explanations are in the directory:
+
+Documentation
+
+
+Primary codon usage analysis programs:
+
+average_codon_freqs
+compile_codon_counts
+compile_codon_freqs
+filter_codon_counts
+freqs_2_dists
+freqs_2_nj_tree (requires neighbor)
+modal_codon_usage
+modal_usage_from_counts
+native_codon_usage (requires formatdb and blastall)
+score_codon_counts
+score_codon_freqs
+
+
+Program for making a printer plot (text or html) of a tree:
+
+sketech_tree
+
+
+Perl modules used by the above programs:
+
+bidir_best_hits.pm
+gjocodonlib.pm
+gjonativecodonlib.pm
+gjonewicklib.pm
+gjoparseblast.pm
+gjophylip.pm
+gjosegmentlib.pm
+gjoseqlib.pm
+gjostat.pm
+high_expression_ref_ab.pm
+
+
+Support programs in perl:
+
+codon_freq_eval_pl
+project_codon_usage_onto_axis_pl
+score_codon_freqs_pl
+
+
+Support programs in C:
+
+Source code:
+codon_counts_x_and_p.c
+codon_freq_eval_2.c
+project_codon_usage_onto_axis.c
+
+Files included by the C programs above:
+gjocodonlib.c
+gjocodonlib.h
+
+Directories of binary executables:
+
+i386_osx_10.4
+i386_osx_10.5
+ppc_osx_10.4
+
+
+External programs called by native_codon_usage and freqs_2_nj_tree, but are
+NOT included in this distribution:
+
+blastall (from NCBI blast distribution)
+formatdb (from NCBI blast distribution)
+neighbor (from Felsenstein PHYLIP distribution)

@@ -1,0 +1,40 @@
+#! /usr/bin/perl
+#
+#  counts_2_codon_freqs  < codon_counts_file  > codon_frequencies
+#
+
+use strict;
+use gjocodonlib;
+
+my ( $id, $pack, $freq );
+
+#  Read the input file:
+
+while ( <> )
+{
+	chomp;
+
+    #  Optionally allow counts to be followed by a tab, then an identifier
+    #  or description:
+
+	s/\t(.*)$//;
+	$id = $1;     # undef if none exists
+
+    #  Check format of counts.  If this is okay,
+    #  split the input line on 2 or more spaces, then on single spaces
+    #  (the output format of compile_codon_counts): 
+
+	/^\d+\s+\d+[\d\s]*$/ or next;
+	$pack = [ map { [ split /\s/ ] } split /\s\s+/ ];
+
+	#  Caluculate relative codon usages
+
+	$freq = gjocodonlib::packaged_count_to_freq( $pack, 0.1 );
+
+	#  Print comma separated frequencies, with vertical bar between amino acids:
+
+	print gjocodonlib::frequencies_as_string( $freq ) . ( $id ? "\t$id\n" : "\n" );
+}
+
+
+1;

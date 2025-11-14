@@ -1,0 +1,115 @@
+#! /usr/bin/perl -w
+#
+#  score_codon_counts  [options] freq_file  < counts_file  > count_scores
+#
+
+use strict;
+# use Data::Dumper;
+
+sub usage
+{
+    print STDERR <<'End_of_Usage';
+
+score_codon_counts -
+
+   Read alternative frequencies from file.  Then, read codon counts from STDIN.
+   For each gene, output a table of p-values for the alternative frequencies.
+
+Usage: score_codon_counts  [options] freq_file  < counts_file  > count_p_vals
+
+Options:
+
+   -l max_len   #  Limit effective length of gene in computing p-value.
+   -m min_freq  #  Minimum frequence for any codon (D = 0.0001)
+   -s           #  Add 'stars' to significantly better matches.
+
+End_of_Usage
+    exit;
+}
+
+
+use gjocodonlib;
+use gjoseqlib;
+use gjostat qw( chisqr_prob );
+
+my $min_freq = 0.0001;    #  Put a limit on lowest expected frequency
+my $max_l = 0;
+my $stars = 0;
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^l// ) { $max_l    = $_ || shift; next }
+    if ( s/^m// ) { $min_freq = $_ || shift; next }
+    if ( s/s//  ) { $stars    = 1 }
+    if ( /./ )
+    {
+        print STDERR "Bad flag: '$_'\n";
+        usage();
+    }
+}
+
+@ARGV == 1 or usage();
+
+my @freqs;
+my $file = shift @ARGV;
+open FH, "<$file" or die "Could not open frequencies file $file\n";
+while ( defined( $_ = <FH> ) )
+{
+    chomp;
+    my $freq = scalar gjocodonlib::split_frequencies( $_ );
+    push @freqs, gjocodonlib::set_minimum_frequency( $freq, $min_freq );
+}
+close FH;
+
+my ( $cnts, $id, @p );
+
+while ( <> )
+{
+    chomp;
+    ( $_, $id ) = split /\t/;
+    $cnts = [ map { [ split /\s/ ] } split /\s\s+/ ];
+    my $scale = 1;
+    if ( $max_l )
+    {
+        my $n = 0;
+        foreach ( @$cnts ) {foreach ( @$_ ) { $n += $_ } }
+        $scale = ( $max_l / $n ) if ( $n > $max_l );
+    }
+
+    @p = map { p_of_cnts( $cnts, $_, $scale ) } @freqs;
+    print interpret( @p ), ( $id ? "\t$id" : "" ), "\n";
+}
+
+exit;
+
+
+sub p_of_cnts
+{
+    my ( $cnts, $freq, $scale ) = @_;
+    my ( $chisqr, $df, undef ) = count_vs_freq_chi_sqr( $cnts, $freq );
+    $df ? gjostat::chisqr_prob( $chisqr * $scale, $df ) : 1
+}
+
+
+sub interpret
+{
+    my ( $pmin, $pmax ) = ( sort { $a <=> $b } @_ )[0, -1];
+    my $smax = $pmax < 0.01        ? 0 :
+               $pmax < 1e2 * $pmin ? 0 :
+               $pmax < 1e4 * $pmin ? 1 :
+               $pmax < 1e6 * $pmin ? 2 :
+                                     3;
+
+    join '', map { sprintf "%10.3e%s", $_, star( $_, $pmax, $smax ) } @_;
+}
+
+
+sub star
+{
+    return '' if ! $stars;
+    my ( $p, $pmax, $smax ) = @_;
+    $p && $pmax && $smax or return "    ";
+    $smax -= int( log( $pmax/$p ) / log( 10 ) );
+    $smax > 0 ? sprintf " %-3s", '*' x $smax : "    "
+}

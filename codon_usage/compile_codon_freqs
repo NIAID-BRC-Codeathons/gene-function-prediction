@@ -1,0 +1,28 @@
+#! /usr/bin/perl
+#
+#  compile_codon_freqs  < CDS_file  > codon_frequencies
+#
+
+use strict;
+
+use gjocodonlib;
+use gjoseqlib;
+
+#  Read the sequence file:
+
+while ( $_ = gjoseqlib::read_next_fasta_seq( \*STDIN ) )
+{
+	#  Count the codons used for each gene, grouping by amino acid (package),
+	#  and then convert to frequencies (with 0.1 pseudocount each):
+
+	my $cnts = gjocodonlib::entry_codon_count( $_ );
+	my $pack = gjocodonlib::codon_count_package( $cnts );
+	my $freq = gjocodonlib::packaged_count_to_freq( $pack, 0.1 );
+
+	#  Print comma separated frequencies, with vertical bar between amino acids:
+
+	gjocodonlib::report_frequencies( $freq );
+}
+
+
+1;

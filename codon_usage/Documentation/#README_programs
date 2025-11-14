@@ -1,0 +1,561 @@
+##############################################################################
+#
+#  Copyright (c) 2009-2010 Gary J. Olsen
+#
+##############################################################################
+Program and library files in this directory:
+
+All codon usage frequencies are "relative codon usage frequencies", that is,
+they are normalized on a per amino acid basis.
+
+Formats of several of the common input and output file types are described
+in README_formats.
+
+Distributed program files:
+
+    average_codon_freqs
+    compile_codon_counts
+    compile_codon_freqs
+    filter_codon_counts
+    freqs_2_dists
+    freqs_2_nj_tree
+    modal_codon_usage
+    native_codon_usage
+    score_codon_counts
+    score_codon_freqs
+    sketch_tree
+
+Distributed helper program files (generally not directly used):
+
+    codon_freq_eval_pl
+    project_codon_usage_onto_axis_pl
+    score_codon_freqs_pl
+
+
+    #  Unix binary files in subdirectories by CPU and OS X version:
+    codon_counts_x_and_p
+    codon_freq_eval_2
+    project_codon_usage_onto_axis
+
+Distributed perl modules:
+
+    bidir_best_hits.pm
+    gjocodonlib.pm
+    gjonewicklib.pm
+    gjoparseblast.pm
+    gjophylip.pm
+    gjosegmentlib.pm
+    gjoseqlib.pm
+    gjostat.pm
+    high_expression_ref_ab.pm
+
+Distributed C source code (see #README_installing)
+
+    codon_counts_x_and_p.c
+    codon_freq_eval_2.c
+    project_codon_usage_onto_axis.c
+    gjocodonlib.c
+    gjocodonlib.h
+
+The following sections provide a brief description of the program and library
+files included in this directory.  Not all are necessary for the basic
+operations.
+
+================================================================================
+average_codon_freqs - 
+
+Finds the average relative codon frequencies for a file of sequences, or a
+file of codon counts (with -c flag).  By default, every codon gets 0.1
+pseudocounts.
+
+Usage:
+
+   average_codon_freqs     < CDS_file     > codon_frequencies
+   average_codon_freqs -c  < counts_file  > codon_frequencies
+
+   Options
+
+      -p pseudo_counts    #  pseudo counts (D = 0.1)
+      -t title            #  title assigned to the average
+
+================================================================================
+bidir_best_hits.pm
+
+A set of utility routines for finding bidirectional best hit pairs between two
+protein sequence sets.  
+Blastall and formatdb must be installed in the path.
+For an individual program with this function, see "native_codon_usage".
+
+================================================================================
+codon_freq_eval_2
+
+This is an auxiliary program, and is not directly accessed by the user (though
+it easily can be).  For efficiency, several programs that evaluate numerous
+genes against a codon usage do so by piping the frequencies to be evaluated
+to this program, while reading the score of each set of frequencies from
+stdout.
+
+Usage: codon_freq_eval_2 [options] codon_count_file < codon_frequencies > scores
+
+Options:
+
+   -e exponent  #  Score is sum over genes of p ** exponent (D = 1)
+   -l max_len   #  In calculating P-value, limit gene length to max_len
+   -p p_value   #  Score is the count of genes with p >= p_value
+
+This is a MacOSX (PowerPC) executable.  It also runs on intel processor-based
+Macintoshes, but should be compiled from source code (below) for optimal
+performance.
+
+The programs affected are:
+
+    modal_codon_usage
+    modal_usage_from_counts
+    native_codon_usage
+
+================================================================================
+codon_freq_eval_2.c
+
+This is the source code file for codon_freq_eval_2 (above).  It is standard
+'C' and uses a minimum of include files:
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+Compile with:
+
+    gcc -O codon_freq_eval_2.c -o codon_freq_eval_2 -lm
+
+or
+
+    cc  -O codon_freq_eval_2.c -o codon_freq_eval_2 -lm
+
+================================================================================
+compile_codon_counts
+
+Reads a file of coding sequences (fasta format), and outputs the counts of
+each codon type for each sequence.  The count data are followed by the
+sequence id, taken from the fasta file definition lines, is appended (tab-
+separated) from the count data.
+
+Usage:  compile_codon_counts  < CDS_file  > codon_counts \t id
+
+This program keeps all 20 amino acids.
+
+The first triplet of every sequence is omitted, and the last codon is omitted
+if it is a stop codon.
+================================================================================
+compile_codon_freqs
+
+This program reads a fasta fromat file of coding sequences and produces a
+file of relative codon usage frequencies.
+
+Usage:  compile_codon_freqs  < CDS_file  > codon_frequencies
+
+It is equivalent to:
+
+   compile_codon_counts < CDS_file | counts_2_codon_freqs > codon_frequencies
+
+================================================================================
+counts_2_codon_freqs
+
+This program reads a file of codon counts for one or more sequences and
+reports the relative codon usage for each set of counts.  If there is an
+id following the counts, this is copied to the corresponding frequencies.
+
+Usage:  counts_2_codon_freqs  < codon_counts  > codon_frequencies
+
+================================================================================
+filter_codon_counts
+
+   Read codon counts from STDIN, passing through those that match user-defined
+   criteria.
+
+Usage:
+
+   filter_codon_counts [options]       < counts > counts_passing_criteria
+   filter_codon_counts [options] freqs < counts > counts_passing_criteria
+   filter_codon_counts [options] f0 f1 < counts > counts_passing_criteria
+
+   filter_codon_counts -s  [options] freq  < counts >   pvalue_id
+   filter_codon_counts -s2 [options] freqs < counts > x_pvalue_id
+   filter_codon_counts -s2 [options] f0 f1 < counts > x_pvalue_id
+
+The first form does not take any codon usage frequences, and can only filter
+by number of codons (-n flag).
+
+The second form takes one or two (as appropriate) sets of codon usage
+frequences from the file freqs.
+
+The third form takes one set of codon usage frequencies from each of the two
+files f0 and f1. This is true even if the first file has multiple sets.
+
+The fourth form takes one set of codon usage frequences from the file freqs
+and outputs pairs of P-value and id.
+
+The fifth and sixth forms take two sets of frequencies (from 1 or 2 files),
+and output triples of x, P-value and id.
+
+The sixth form takes one set of codon usage frequencies from each of the two
+files f0 and f1, and outputs triples of x, P-value and id.
+
+Options:
+
+   -c              #  Complement the P-value and/or x-value conditions
+                   #     (accept if outside the bounds, rather than inside)
+   -g     p_min    #  Genome: select genes that match a point between x_min
+                   #     (D = 0) and x_max (D = inf) on the f0->f1 axis with
+                   #     P >= p_min
+   -l     max_len  #  Limit the number of codons used to compute P-values,
+                   #     scaling chi-square by max_len/n_codon when necessary
+   -nmax  max_cdn  #  Select genes with <= max_cdn codons (D = inf)
+   -nmin  min_cdn  #  Select genes with >= min_cdn codons (D = 0)
+   -pmax  p_max    #  Select genes than match freqs with P <= p_value (D = 1)
+   -pmin  p_min    #  Select genes than match freqs with P >= p_value (D = 0)
+   -p2max p_max    #  Select genes that match a point x on the f0->f1 axis
+                   #     with P <= p_max (D = 1)
+   -p2min p_min    #  Select genes that match a point x on the f0->f1 axis
+                   #     with P >= p_min (D = 0)
+   -s              #  Output scores (P-value \t id), rather than filtering
+   -s2             #  Output scores (x \t P-value \t id), rather than filtering
+   -xmax  x_max    #  Select genes whose best match on the f0->f1 axis has
+                   #     x <= x_max (D = inf); with -g, -xmax (D = inf)
+                   #     contrains x, and then filters by P-value.
+   -xmin  x_min    #  Select genes whose best match on the f0->f1 axis has
+                   #     x >= x_min (D = -inf); with -g, -xmin (D = 0)
+                   #     contrains x, and then filters by P-value.
+
+Only one of the options -g, -pmax, -pmin, -p2max or -p2min should be specified.
+With -xmax and/or -xmin, -p... and -p2... are equivalent.
+
+With -s or -s2, the following flags are ignored: -c, -pmax, -pmin, -p2max
+and -p2min.  The interpretation of -xman and -xmin are as if -g was also
+used (they limit the range of x used to match the observed usage).  The
+effects of -nmax and -nmin are unchanged; they still filter.
+
+================================================================================
+freqs_2_dists
+
+Make a distance matrix appropriate for a tree calculation from a file of
+frequencies.  Allows use of programs in the PHYLIP package for clustering
+frequencies from different sources.
+
+Usage:  freqs_2_dists < freqs_file  > distances
+
+Distance is Manhatten metric within amino acid, and Euclidian
+between amino acids.
+
+The output file is appropriate for use with the neighbor and fitch
+programs in the PHYIP package.  Although these produce a tree, it is
+best to think of it as a clustering.
+
+================================================================================
+freqs_2_nj_tree
+
+Construct a neighbor-joining tree of codon usage frequencies (supplied as
+input).  The output is a tree in the Newick's 8:45 standard.  The distance
+is Manhatten metric within amino acid, and Euclidian between amino acids.
+
+This program requires that the 'neighbor' program from the PHYLIP package be
+installed and accessible throught the current "path".
+
+Usage: freqs_2_nj_tree [options] < freqs_file  > newick_tree
+
+Options:
+
+   -a   # Aesthetic tree order of tips in output tree
+   -c   # Clobber infile, outfile and outtree files if they exisit
+   -m   # Midpoint root the output tree
+
+================================================================================
+gjocodonlib.pm
+
+A set of utility routines for codon usage analysis.  It is required for many
+of the programs in this directory.
+
+================================================================================
+gjonativecodonlib.pm
+
+A set of utility routines for finding the native (modal and high expression)
+codon usages of a genome.
+
+================================================================================
+gjonewicklib
+
+Copyright (c) 2003-2007 University of Chicago and Fellowship
+for
+Interpretations of Genomes. All Rights Reserved.
+
+This file is part of the
+SEED Toolkit.
+
+The SEED Toolkit is free software. You can redistribute
+it
+and/or modify it under the terms of the SEED Toolkit
+Public License.
+
+You
+should have received a copy of the SEED Toolkit Public License
+along with this
+program; if not write to the University of Chicago
+at info@ci.uchicago.edu or
+the Fellowship for Interpretation of
+Genomes at veronika@thefig.info or
+download a copy from
+ http://www.theseed.org/LICENSE.TXT.
+
+This perl module contains a set of perl functions for dealing with trees
+
+================================================================================
+gjoparseblast.pm
+
+This perl module is a set of functions for reading blast output from a file, a
+pipe or an array reference (D = \*STDIN), and providing various perl
+interfaces to the data.
+
+================================================================================
+gjophylip.pm
+
+A set of utility routines that provide a perl interface to programs in the
+PHYLIP program package. 
+The programs from the PHYLIP package must be installed
+in the path.
+
+================================================================================
+gjosegmentlib.pm
+
+A set of utility routines for analyzing intervals along an axis.  It is
+required for the other modules.
+
+================================================================================
+gjoseqlib.pm
+
+A set of utility routines for basic operations on sequence data.
+
+================================================================================
+gjostat.pm
+
+A set of basic statistical routines.  It is used in evaluating p-values.
+
+================================================================================
+high_expression_ref_ab.pm
+
+A perl module containing candidate high expression genes from Escherichia coli
+K-12 and Methanococus 
+maripaludis S2.  This is invoked during the search for
+high expression genes using "native_codon_usage".
+Blastall and formatdb must
+be installed in the path.
+
+================================================================================
+modal_codon_usage
+
+This program computes the modal codon usage directly from the coding sequences
+fasta format.
+
+    modal_codon_usage  < dna_fasta  > modal_codon_usage_frequencies
+
+================================================================================
+modal_usage_from_counts
+
+A "one-step" program for going straight from codon counts to modal usage.
+
+Usage:  modal_usage_from_counts  [options] < counts > modal_usage
+
+Options:
+
+    -e expon     #  Exponent of chi-square P-value used in optimizing modal
+                 #     frequencies (D = 0.3)
+    -m max_len   #  Cut-off length when scoring by p-value
+    -p p-value   #  Evaluate the final frequencies for p >= p-value
+    -t title     #  Title associated with frequencies
+    -v vertices  #  Minimum number of vertices in simplex optimization of the
+                 #     modal usage (D = 50).  Only has effect with fewer than
+                 #     vertices genes.  Default seems as good as anything.
+
+Thus, to go straight from sequenes to modal usage one could use the pipe:
+
+    compile_codon_counts < CDS_file | modal_usage_from_counts [options] > modal_usage
+
+================================================================================
+native_codon_usage
+
+Estimate the native (modal and high expression) codon usages of the protein
+coding genes in a genome.
+
+Usage:
+
+   native_codon_usage [opts] < DNA_file > genome_mode \n high_expr_mode
+
+   DNA_file is an NCBI .ffn file of coding sequences, or equivalent.
+   Each sequence should include the initiator codon (which will be removed).
+   If terminator codons are present, they are automatically removed.
+
+Options:
+
+    -a                #  all high expression estimates are output, not just the
+                      #     final one
+    -A                #  include genome average as first codon usage
+    -b bbh_blast_opts #  blast flags, preferably wrapped in single quote marks
+    -B                #  compute the significance of high expression bias
+                      #     (implicitly sets -n 0 -o 1)
+    -c bbh_min_cover  #  blast coverage required for bbh (D = 0.7)
+    -d min_nonmodal   #  minimum fraction of candidate high expression genes
+                      #     that must differ from the genome mode for the
+                      #     mode calculation to be iterated (D = 0.20)
+    -e bbh_max_e_val  #  blast e-value maximum for bbh (D = 1e-5)
+    -E mode_exponent  #  exponent used in genome mode calculation (D = 0.3)
+    -f counts_file    #  save the gene codon counts (with id and description)
+                      #     to the named file (default extension is .counts)
+    -g                #  exclude the genome mode from the output
+    -h he_ref_module  #  name of perl module containing the high expression
+                      #     reference sequences (D = high_expression_ref_ab,
+                      #     which includes an archaeon and a bacterium)
+    -H initial_he_ids #  a file containing the ids of genes to be used as an
+                      #     initial high expression codon usage estimate
+                      #     (file can be raw ids, counts, or fasta)
+    -i bbh_identity   #  blast sequence identity for bbh (D = 0.2)
+    -k max_keep       #  number of high expression candidates to pass to next
+                      #     iteration. A value less than 1 is taken as the
+                      #     fraction of input genes (D = 0.1)
+    -l p_val_max_len  #  max codons for P-value calculations (D = inf)
+    -m min_he_genes   #  minimum number of high expression genes (D = 20)
+    -n max_iter       #  number of rounds of refinement to perform, not
+                      #     counting the original estimate from the
+                      #     bidirectional best hits (D = 2)
+    -o omit_p_value   #  omit genes matching genome mode at P-value (D = 0.1)
+    -p match_p_value  #  min P-value for reporting match to a mode (D = 0.1)
+    -q                #  quiet mode (fewer status messages)
+    -r reach_p_value  #  min match to axis P-value for inclusion in next high
+                      #     expression estimate (D = 0.05)
+    -s bbh_positives  #  blast positives (similar aa) for bbh (D = 0.3)
+    -t genome_title   #  label to be added to analysis results
+    -v                #  print the version to stdout and exit
+    -x min_x_value    #  min value of x for use in next estimate (D = 0.5)
+    -?                #  print usage and details of the algorithm used, then
+                      #     terminate (? is a shell metacharacter, so use -\?)
+
+External Programs Used:
+
+   These programs should installed and accessible through the user's path:
+
+       blastall
+       formatdb
+
+   These programs are supplied as C source code, and can dramatically improve
+   performance if they are compiled and accessible through the user's path:
+
+       codon_counts_x_and_p
+       codon_freq_eval_2
+       project_codon_usage_onto_axis
+
+================================================================================
+score_codon_counts
+
+Report the codon usage p-value for each CDS in a counts file, for one or more
+codon usages.  This differs from nearly every other program in that it scores
+genes (relative to frequencies), rather than frequencies (relative to genes).
+This is used to identify the genes that do or do not match a given codon
+usage, or that match one usage significantly better than another.
+
+Usage:  score_codon_counts  [options] freq_file  < counts_file  > count_p_vals
+
+Options:
+
+   -l max_len   #  Limit effective length of gene in computing chi-square.
+   -s           #  Add 'stars' to significantly better matches.
+
+Read alternative frequencies from file.  Then, read codon counts from STDIN.
+For each gene, output a table of p-values for the alternative frequencies.
+If an id is supplied with the counts, then it is appended to the line of
+p-values.
+
+================================================================================
+score_codon_freqs
+
+The program evaluates how well one or more sets of codon usage frequencies
+matches the genes in a codon_counts file.
+
+score_codon_freqs [options] CDS_counts_file  < freqs_file  > score_tab_freqs
+
+Options:
+
+   -e exponent  #  Score by sum of p**exponent (D = 1)
+   -l max_len   #  Limit effective length of gene in computing chi-square.
+   -p p_value   #  Socre by number of genes with p >= p_value
+   -v           #  Report progress to STDERR
+
+Read a set of frequencies from STDIN, and output a corresponding set of
+usage scores relative to CDS_counts.  By default, each score is the sum
+over all genes of the chi-square p-value (optionally raised to the power
+'exponent') for the gene matching the frequencies.  If a p_value is
+supplied, each score is the count of genes with p >= p_value, that is,
+the count of genes matching the frequencies.
+
+Each output line is the score for a set of frequencies, tab separated from
+the frequencies.  Optionally this is followed by any id that might have
+followed the original copy of the frequencies.  If the input codon usage
+frequencies alread include a score, it is ignored.
+
+For example, if E_coli_K12.dna has CDS DNA sequences, we can find out how
+well each gene in the genome represents the codon usage of the other genes
+with:
+
+   set g=E_coli_K12
+   compile_codon_counts < $g.dna > $g.counts
+   compile_codon_freqs  < $g.dna > $g.freqs
+   score_codon_freqs_2  $g.counts < $g.freqs  > $g.scored_freqs
+
+================================================================================
+score_codon_freqs_pl -
+
+Score a set of codon counts, forcing the evaluation to be done entirely with
+perl routines. Generally one would use score_codon_freqs instead.
+
+Usage:
+
+    score_codon_freqs_pl [opts] CDS_cnts_file  < freqs_file  > score_tab_freqs
+
+Options:
+
+   -e exponent  #  Score by sum of p**exponent (D = 0.3)
+   -l max_len   #  Limit effective length of gene in computing chi-square.
+   -p p_value   #  Score by number of genes with p >= p_value
+   -s           #  Omit frequencies from output (scores only)
+   -v           #  Report progress to STDERR
+
+Read a set of frequencies from STDIN, and output a corresponding set of
+usage scores relative to CDS_counts.  By default, each score is the sum
+over all genes of the exponent power of the chi-square P-value for the gene
+matching the frequencies.  If a p_value is supplied, each score is the count
+of genes with p >= p_value, that is, the genes matching the frequencies.
+
+Example of flow (assuming that E_coli_K12.dna has orf dna sequences):
+
+   set g=E_coli_K12
+   compile_codon_counts             < $g.dna    > $g.counts
+   compile_codon_freqs              < $g.dna    > $g.freqs
+   score_codon_freqs_pl  $g.counts  < $g.freqs  > $g.scored_freqs
+
+================================================================================
+sketch_tree -
+
+A program to make a printer plot of a Newick tree.
+
+Usage:  sketch_tree  [options]  < tree  > ascii_sketch
+
+    options:
+        -a         Reorder taxa in aesthetic tree order
+        -c         Collapse zero-length branches
+        -f fasta   Relabel tips from descriptions in fasta sequence file
+        -h         Use HTML encoded line drawing set
+        -i         Omit identifiers (first word) when relabeling tips
+        -k keep    Keep only the taxa listed (one per line) in the file keep
+        -l table   Relabel tips from tab delimited from -> to table
+        -m         Use midpoint rooting
+        -o omit    Delete the taxa listed (one per line) in the file omit
+        -u         Use UTF8 encoded line drawing set
+        -w width   Width of tree (without labels) (D=64)
+        -x min_dx  Minimum horizontal space between consecutive nodes (D=2)
+        -y dy      Vertical separation of consecutive tips (D=2)

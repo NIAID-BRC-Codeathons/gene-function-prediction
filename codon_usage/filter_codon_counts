@@ -1,0 +1,379 @@
+#! /usr/bin/perl -w
+
+use strict;
+
+my $usage = <<'End_of_Usage';
+
+filter_codon_counts -
+
+   Read codon counts from STDIN, passing through those that match user-defined
+   criteria.
+
+Usage:
+
+   filter_codon_counts [options]       < counts > counts_passing_criteria
+   filter_codon_counts [options] freqs < counts > counts_passing_criteria
+   filter_codon_counts [options] f0 f1 < counts > counts_passing_criteria
+
+   filter_codon_counts -s  [options] freq  < counts >   pvalue_id
+   filter_codon_counts -s2 [options] freqs < counts > x_pvalue_id
+   filter_codon_counts -s2 [options] f0 f1 < counts > x_pvalue_id
+
+The first form does not take any codon usage frequences, and can only filter
+by number of codons (-n flag).
+
+The second form takes one or two (as appropriate) sets of codon usage
+frequences from the file freqs.
+
+The third form takes one set of codon usage frequencies from each of the two
+files f0 and f1. This is true even if the first file has multiple sets.
+
+The fourth form takes one set of codon usage frequences from the file freqs
+and outputs pairs of P-value and id.
+
+The fifth and sixth forms take two sets of frequencies (from 1 or 2 files),
+and output triples of x, P-value and id.
+
+The sixth form takes one set of codon usage frequencies from each of the two
+files f0 and f1, and outputs triples of x, P-value and id.
+
+Options:
+
+   -c              #  Complement the P-value and/or x-value conditions
+                   #     (accept if outside the bounds, rather than inside)
+   -g     p_min    #  Genome: select genes that match a point between x_min
+                   #     (D = 0) and x_max (D = inf) on the f0->f1 axis with
+                   #     P >= p_min
+   -l     max_len  #  Limit the number of codons used to compute P-values,
+                   #     scaling chi-square by max_len/n_codon when necessary
+   -nmax  max_cdn  #  Select genes with <= max_cdn codons (D = inf)
+   -nmin  min_cdn  #  Select genes with >= min_cdn codons (D = 0)
+   -pmax  p_max    #  Select genes than match freqs with P <= p_value (D = 1)
+   -pmin  p_min    #  Select genes than match freqs with P >= p_value (D = 0)
+   -p2max p_max    #  Select genes that match a point x on the f0->f1 axis
+                   #     with P <= p_max (D = 1)
+   -p2min p_min    #  Select genes that match a point x on the f0->f1 axis
+                   #     with P >= p_min (D = 0)
+   -s              #  Output scores (P-value \t id), rather than filtering
+   -s2             #  Output scores (x \t P-value \t id), rather than filtering
+   -xmax  x_max    #  Select genes whose best match on the f0->f1 axis has
+                   #     x <= x_max (D = inf); with -g, -xmax (D = inf)
+                   #     contrains x, and then filters by P-value.
+   -xmin  x_min    #  Select genes whose best match on the f0->f1 axis has
+                   #     x >= x_min (D = -inf); with -g, -xmin (D = 0)
+                   #     contrains x, and then filters by P-value.
+
+Only one of the options -g, -pmax, -pmin, -p2max or -p2min should be specified.
+With -xmax and/or -xmin, -p... and -p2... are equivalent.
+
+With -s or -s2, the following flags are ignored: -c, -pmax, -pmin, -p2max
+and -p2min.  The interpretation of -xman and -xmin are as if -g was also
+used (they limit the range of x used to match the observed usage).  The
+effects of -nmax and -nmin are unchanged; they still filter.
+
+End_of_Usage
+
+my $details = <<'End_of_Details';
+
+Depricated option forms:
+
+   -n  relation n_cdn  #  Select based on codon count
+                       #     use -nmin or -nmax
+   -p  relation p_val  #  Select based on p-value of match to freq
+                       #     use -pmin or -pmax
+   -p2 relation p_val  #  Select based on p-value of match to f0->f1 axis
+                       #     use -p2min or -p2max
+   -x  relation x_val  #  Select based on projection point onto f0->f1 axis;
+                       #     use -xmin or -xmax
+
+Valid relations are ge, gt, le, and lt, or their equivalents >=, >, <= and <.
+Because > and < are special to the shell, they must be in quotes, or escaped
+by a backslash.
+
+End_of_Details
+
+
+use gjocodonlib;
+use gjoseqlib;
+use gjostat qw( chisqr_prob );
+use IPC::Open2 qw( open2 );
+
+my $comple    =    0;       #  Complement all match criteria EXECPT length
+my $genome    =    0;       #  Treat negative x values differently
+my $max_codon =  1e9;       #  Maxiumn number of codons
+my $max_len   =  1e9;       #  Maximum codons used in p-value calculation
+my $max_p_val =    1;       #  Greatest p-value for matching freq
+my $max_x     =  1e9;       #  Greatest x-value for projecting on 2 freqs
+my $min_codon =    1;       #  Minimum number of codons
+my $min_freq  =    0.0001;  #  Lowest expected frequency for p-value calculation
+my $min_p_val =    0;       #  Lowest p-value for matching freq
+my $min_x     = -1e9;       #  Lowest x-value for projecting on 2 freqs
+my $n_freq    =    0;       #  Number of frequency files needed
+my $score     =    0;       #  Score rather than filtering
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+
+    if ( s/^g// )       { $min_p_val = $_ || shift; $genome = 1; $n_freq = 2; next }
+
+    if ( s/^l// )       { $max_len   = $_ || shift; next }
+
+    if ( s/^n_?max// )  { $max_codon = $_ || shift; next }
+    if ( s/^n_?min// )  { $min_codon = $_ || shift; next }
+
+    if ( s/^p_?max// )  { $max_p_val = $_ || shift; $n_freq ||= 1; next }
+    if ( s/^p_?min// )  { $min_p_val = $_ || shift; $n_freq ||= 1; next }
+
+    if ( s/^p2_?max// ) { $max_p_val = $_ || shift; $n_freq   = 2; next }
+    if ( s/^p2_?min// ) { $min_p_val = $_ || shift; $n_freq   = 2; next }
+
+    if ( s/^x_?max// )  { $max_x     = $_ || shift; $n_freq   = 2; next }
+    if ( s/^x_?min// )  { $min_x     = $_ || shift; $n_freq   = 2; next }
+
+    # Depricated form:
+    if ( s/^n// )
+    {
+        $_ ||= shift;
+        s/^-//;
+        if    ( s/^ge//i )   { $min_codon =   $_ || shift       }
+        elsif ( s/^gt//i )   { $min_codon = ( $_ || shift ) + 1 }
+        elsif ( s/^\>=// )   { $min_codon =   $_ || shift       }
+        elsif ( s/^\>//  )   { $min_codon = ( $_ || shift ) + 1 }
+        elsif ( s/^le//i )   { $max_codon =   $_ || shift       }
+        elsif ( s/^lt//i )   { $max_codon = ( $_ || shift ) - 1 }
+        elsif ( s/^\<=// )   { $max_codon =   $_ || shift       }
+        elsif ( s/^\<//  )   { $max_codon = ( $_ || shift ) - 1 }
+        else  { print STDERR "Bad relation with -c flag: '$_'\n", $usage; exit }
+        next;
+    }
+
+    # Depricated form:
+    if ( s/^p// )
+    {
+        $n_freq = s/^2// ? 2 : 1;                            # -p or -p2 ?
+        $_ ||= shift;
+        s/^-//;
+        if    ( s/^g[et]//i ) { $min_p_val = $_ || shift }
+        elsif ( s/^\>=?// )   { $min_p_val = $_ || shift }
+        elsif ( s/^l[et]//i ) { $max_p_val = $_ || shift }
+        elsif ( s/^\<=?// )   { $max_p_val = $_ || shift }
+        else  { print STDERR "Bad relation with -p flag: '$_'\n", $usage; exit }
+        next;
+    }
+
+    # Depricated form:
+    if ( s/^x// )
+    {
+        $_ ||= shift;
+        s/^-//;
+        if    ( s/^g[et]//i ) { $min_x = $_ || shift }
+        elsif ( s/^\>=?// )   { $min_x = $_ || shift }
+        elsif ( s/^l[et]//i ) { $max_x = $_ || shift }
+        elsif ( s/^\<=?// )   { $max_x = $_ || shift }
+        else  { print STDERR "Bad relation with -x flag: '$_'\n", $usage; exit }
+        $n_freq = 2;
+        next;
+    }
+
+    #  Flags that do not take a value:
+
+    if ( s/c//g ) { $comple = 1 }
+    if ( /^s$/ )  { $score  = 1; $n_freq = 1; next }
+    if ( /^s2$/ ) { $score  = 1; $n_freq = 2; next }
+    if ( /./ )    { print STDERR "Bad flag: '$_'\n", $usage; exit }
+}
+
+if ( @ARGV > $n_freq )
+{
+    print STDERR "More arguements present (@{[scalar @ARGV]}) than maximum expected ($n_freq).\n", $usage;
+    exit;
+}
+
+my @freq;
+while ( ( @freq < $n_freq ) && @ARGV )
+{
+    my $i = @freq;
+    my $file = shift;
+    push @freq, gjocodonlib::read_frequencies( $file );
+    @freq > $i or print STDERR "Problem with frequencies data in '$file'.\n" and exit;
+
+    splice @freq, 1 if @freq > 1 && @ARGV;  # Another file
+}
+
+( @freq >= $n_freq ) or print STDERR "Missing frequencies file.\n", $usage and exit;
+
+splice @freq, $n_freq if @freq > $n_freq;
+
+my $f0 = $freq[0];
+my ( $pipe, $k, $f_xmin, $f_xmax );
+if ( $n_freq == 2 )
+{
+    $pipe = open_evaluation_pipe( @freq, $max_len );
+    if ( $genome || $score )
+    {
+        $k = gjocodonlib::k_from_f0_and_f1( @freq );
+        $min_x = 0 if $genome && $min_x < -100;  # Default to 0 if -g without -xmin
+        $f_xmin = gjocodonlib::freqs_at_x( $f0, $k, $min_x );
+        $f_xmax = gjocodonlib::freqs_at_x( $f0, $k, $max_x ) if $max_x < 100;
+    }
+}
+
+#  Evaluate each codon usage:
+
+my ( $p, $chisqr, $df, $n, $x );
+
+while ( <STDIN> )
+{
+    next if ! /\S/;
+    chomp;
+    my ( $cnt, undef ) = gjocodonlib::split_counts( $_ );
+
+    $n = gjocodonlib::n_codon( $cnt );
+    next if $n < $min_codon;  #  Not subject to -c
+    next if $n > $max_codon;  #  Not subject to -c
+
+    if ( $n_freq == 1 )
+    {
+        $p = gjocodonlib::count_vs_freq_p_value( $cnt, $f0, $max_len );
+    }
+    elsif ( $n_freq == 2 )
+    {
+        ( $x, $p ) = codon_counts_x_and_p( $pipe, $cnt );
+
+        if ( ! $genome && ! $score )
+        {
+            next if $comple ? ( ( $x >  $min_x ) && ( $x <  $max_x ) )   # reject if inside bounds
+                            : ( ( $x <= $min_x ) || ( $x >= $max_x ) );  # reject if outside bounds
+        }
+        elsif ( $x < $min_x )
+        {
+            $x = $min_x;
+            $p = gjocodonlib::count_vs_freq_p_value( $cnt, $f_xmin, $max_len );
+        }
+        elsif ( $x > $max_x )
+        {
+            $x = $max_x;
+            $p = gjocodonlib::count_vs_freq_p_value( $cnt, $f_xmax, $max_len );
+        }
+    }
+
+    if ( $n_freq && ! $score )
+    {
+        next if $comple ? ( ( $p >= $min_p_val ) && ( $p <  $max_p_val ) )   # reject if inside bounds
+                        : ( ( $p <  $min_p_val ) || ( $p >= $max_p_val ) );  # reject if outside bounds
+    }
+
+    if ( ! $score )
+    {
+        print "$_\n";  # The original line, so it includes the id
+    }
+    else
+    {
+        my @out = ();
+        push @out, sprintf( "%.3f", $x ) if $n_freq == 2;
+        push @out, sprintf( "%.5e", $p );
+        my ( $id ) = /\t\s*(\S.*)/;
+        push @out, $id if defined $id;
+        print join( "\t", @out ), "\n";
+    }
+}
+
+close_pipe2( $pipe ) if $pipe && ( @$pipe == 3 );
+
+exit;
+
+
+#===============================================================================
+#  Just subroutines below:
+#===============================================================================
+#
+#   $pipe = open_evaluation_pipe( $f0, $f1, $max_len );
+#
+#   $pipe = [ $pid, $rw, $wr ]
+#
+#-------------------------------------------------------------------------------
+sub open_evaluation_pipe
+{
+    my ( $f0, $f1, $max_len ) = @_;
+    my $pipe;
+
+    if ( &gjocodonlib::version( 'codon_counts_x_and_p' ) )
+    {
+        my ( $rd, $wr, $eval_cmd );
+        $eval_cmd  = "codon_counts_x_and_p";
+        $eval_cmd .= " -l $max_len" if $max_len;
+        my $pid = open2( $rd, $wr, $eval_cmd );
+        { my $old = select $wr; $| = 1; select $old; }  #  Autoflush the write pipe
+        gjocodonlib::report_frequencies( $wr, $f0 );
+        gjocodonlib::report_frequencies( $wr, $f1 );
+        $pipe = [ $pid, $rd, $wr ];
+    }
+    else
+    {
+        my $k = gjocodonlib::k_from_f0_and_f1( $f0, $f1 );
+        $pipe = [ 0, $f0, $k, $max_len ];
+    }
+
+    return $pipe;
+}
+
+
+#-------------------------------------------------------------------------------
+#  codon_counts_x_and_p( $pipe, $cnt );
+#-------------------------------------------------------------------------------
+sub codon_counts_x_and_p
+{
+    my ( $pipe, $cnt ) = @_;
+    my ( $x, $p );
+
+    if ( @$pipe == 4 )
+    {
+        my ( $chisqr, $df, $n );
+        my ( undef, $f0, $k, $max_len ) = @$pipe;
+        my ( $proj ) = gjocodonlib::project_by_min_chi_sqr_2( $f0, $k, $cnt );
+        ( $x, $chisqr, $df, $n ) = @$proj;
+        $chisqr *= ( $max_len / $n ) if ( $n > $max_len );
+        $p = ( $df > 1 ) ? gjostat::chisqr_prob( $chisqr, $df ) : 1;
+    }
+    else
+    {
+        my ( undef, $rd, $wr ) = @$pipe;
+        gjocodonlib::report_counts( $wr, $cnt );
+        ( $x, $p ) = map { chomp; split /\t/ } scalar <$rd>;
+    }
+
+    ( $x, $p )
+}
+
+
+#-------------------------------------------------------------------------------
+#  close_pipe2( $pipe );
+#-------------------------------------------------------------------------------
+sub close_pipe2
+{
+    my ( $pipe ) = @_;
+    if ( $pipe && ( ref( $pipe ) eq 'ARRAY' ) && @$pipe == 3 )
+    {
+        my ( $pid, $rd, $wr ) = @$pipe;
+        close $wr if $wr;
+        close $rd if $rd;
+        waitpid( $pid, 0 ) if $pid;
+    }
+}
+
+
+#-------------------------------------------------------------------------------
+#  $freq = read_freq( $fh )
+#-------------------------------------------------------------------------------
+sub read_freq
+{
+    my $fh = shift;
+    my $fstr = <$fh>;
+    $fstr or return undef;
+    chomp $fstr;
+    my $f = scalar gjocodonlib::split_frequencies( $fstr );
+    $f && ( ref( $f ) eq 'ARRAY' ) or return undef;
+    gjocodonlib::set_minimum_frequency( $f, $min_freq );
+}
+

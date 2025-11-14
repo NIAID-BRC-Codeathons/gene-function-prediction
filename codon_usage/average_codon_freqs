@@ -1,0 +1,71 @@
+#! /usr/bin/perl
+#
+#  average_codon_freqs     < CDS_file     > codon_frequencies
+#  average_codon_freqs -c  < counts_file  > codon_frequencies
+#
+#  Options
+#
+#     -p pseudo_counts    #  pseudo counts
+#
+use strict;
+
+use gjocodonlib;
+use gjoseqlib;
+
+my $usage = <<'End_of_Usage';
+Usage:
+
+   average_codon_freqs     < CDS_file     > codon_frequencies
+   average_codon_freqs -c  < counts_file  > codon_frequencies
+
+   Options
+
+      -p pseudo_counts    #  pseudo counts (D = 0.1)
+      -t title            #  title assigned to the average
+
+End_of_Usage
+
+my $counts = 0;
+my $dna    = 1;
+my $pseudo = 0.1;
+my $title;
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^p// ) { $pseudo = $_ || shift; next }
+    if ( s/^t// ) { $title  = $_ || shift; next }
+
+    if ( s/c//  ) { $counts = 1 }
+    if ( s/d//  ) { $dna    = 1 }   #  Default is DNA file
+    if ( /./ )
+    {
+        print STDERR "Bad flag '$_'\n", $usage;
+        exit;
+    }
+}
+
+#  Read the sequence file, accumulating the codons used for each gene:
+
+my $total;
+if ( $counts )
+{
+    my @counts = map { chomp; scalar gjocodonlib::split_counts( $_ ) } <>;
+    $total = gjocodonlib::sum_packaged_counts( \@counts );
+}
+elsif ( $dna )
+{
+    my $cnts = {};
+    while ( $_ = gjoseqlib::read_next_fasta_seq( \*STDIN ) )
+    {
+        gjocodonlib::entry_codon_count( $cnts, $_ );
+    }
+
+    #  Convert hash to list
+
+    $total = gjocodonlib::codon_count_package( $cnts );
+}
+
+my $freq = gjocodonlib::packaged_count_to_freq( $total, $pseudo );
+
+gjocodonlib::report_frequencies( $freq, $title ? $title : () );

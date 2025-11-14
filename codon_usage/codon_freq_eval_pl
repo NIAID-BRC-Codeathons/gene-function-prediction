@@ -1,0 +1,105 @@
+#! /usr/bin/perl -w
+
+use strict;
+
+sub usage
+{
+    print STDERR <<'End_of_usage';
+
+Usage:  codon_freq_eval_pl [options] CDS_counts_file  < freqs  > scores
+
+Unlike other programs, frequencies are blank separated.
+
+Options:
+
+   -e exponent  #  Score by sum of p**exponent (D = 0.3)
+   -l max_len   #  Limit effective length of gene in computing chi-square.
+   -p p_value   #  Socre by number of genes with p >= p_value
+   -v           #  Print version number and exit
+
+Read a set of frequencies from STDIN, and output a corresponding set of
+usage scores relative to CDS_counts.  By default, each score is the sum
+over all genes of the chi-square p-value (optionally raised to the power
+'exponent') for the gene matching the frequencies.  If a p_value is
+supplied, each score is the count of genes with p >= p_value, that is,
+the count of genes matching the frequencies.
+
+End_of_usage
+
+    exit;
+}
+
+use gjocodonlib;
+use gjoseqlib;
+
+my $expon   = 0.3;
+my $max_l   = 0;
+my $p_val;
+my $version = "1.00";
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^e// ) { $expon = $_ || shift; next }
+    if ( s/^l// ) { $max_l = $_ || shift; next }
+    if ( s/^p// ) { $p_val = $_ || shift; next }
+
+    if ( s/v//g ) { print "$version\n"; exit }
+    if ( m/./ )
+    {
+        print STDERR "Bad flag: '$_'\n";
+        usage();
+    }
+}
+
+@ARGV == 1 or usage();
+
+my $file = shift @ARGV;
+-f $file and open( CNTS, "<$file" )
+          or die "Could not find or open codon counts file '$file'\n";
+my @counts = map { chomp; scalar split_counts( $_ ) } <CNTS>;
+close CNTS;
+
+@counts or die "No codon counts found in '$file'\n";
+
+{ my $old = select STDOUT; $| = 1; select $old; }  # Autoflush
+
+my ( $freq, $scr );
+while ( <> )
+{
+    chomp;
+    $freq = frequencies_array( split );
+    if ( ! $freq || ref( $freq ) ne 'ARRAY' || @$freq < 18 )
+    {
+        print "-1\n";
+        next;
+    }
+    $scr = gjocodonlib::codon_freq_score_0( $freq, \@counts, $p_val, $expon, $max_l );
+    printf "%.8f\n", $scr;
+}
+
+
+sub frequencies_array
+{
+    return undef if @_ < 59;
+
+    [ [ @_[  0 ..  3 ] ],  # A
+      [ @_[  4 ..  5 ] ],  # C
+      [ @_[  6 ..  7 ] ],  # D
+      [ @_[  8 ..  9 ] ],  # E
+      [ @_[ 10 .. 11 ] ],  # F
+      [ @_[ 12 .. 15 ] ],  # G
+      [ @_[ 16 .. 17 ] ],  # H
+      [ @_[ 18 .. 20 ] ],  # I
+      [ @_[ 21 .. 22 ] ],  # K
+      [ @_[ 23 .. 28 ] ],  # L
+      [ @_[ 29 .. 30 ] ],  # N
+      [ @_[ 31 .. 34 ] ],  # P
+      [ @_[ 35 .. 36 ] ],  # Q
+      [ @_[ 37 .. 42 ] ],  # R
+      [ @_[ 43 .. 48 ] ],  # S
+      [ @_[ 49 .. 52 ] ],  # T
+      [ @_[ 53 .. 56 ] ],  # V
+      [ @_[ 57 .. 58 ] ]   # Y
+    ];
+}

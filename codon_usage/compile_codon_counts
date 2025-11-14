@@ -1,0 +1,63 @@
+#! /usr/bin/perl
+#
+#  compile_codon_counts [options] < CDS_file  > codon_counts \t id
+#
+#  Options:
+#
+#      -d   # Include the definition, not just the id
+#
+use strict;
+
+my $usage = <<'End_of_Usage';
+
+Usage: compile_codon_counts [options] < CDS_file  > codon_counts \t id
+
+Output:
+
+   Counts for each codon, in order A C D E F G H I K L N P Q R S T V Y M W.
+   Codon are separated by one blank space, amino acids by two.
+   Codon counts are followed by a tab and the sequence id, and optionally
+      by a space and the rest of the sequence definition line.
+
+Options:
+
+   -d   # Include the definition, not just the id
+
+End_of_Usage
+
+use gjocodonlib;
+use gjoseqlib;
+
+my $def;
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    local $_ = shift;
+    if ( s/d//i ) { $def = 1 }
+
+    if ( /./ )
+    {
+        print STDERR "Bad flag '$_'\n", $usage;
+        exit;
+    }
+}
+
+my ( $entry, $cnts, $pack );
+
+#  Read the sequence file:
+
+while ( $entry = gjoseqlib::read_next_fasta_seq( \*STDIN ) )
+{
+	#  Count the codons used for each gene, grouping by amino acid.
+	#  M and W are last; other amino acids are ordered alphabetically
+	#  by one letter code (A C D E F G H I K L N P Q R S T V Y M W).
+
+	$cnts = gjocodonlib::entry_codon_count( $entry );
+	$pack = gjocodonlib::codon_count_package_20( $cnts );
+
+	#  Print blank separated counts, with double space between amino acids:
+
+    my $id = $entry->[0];
+    $id .= ' ' . $entry->[1] if $def && defined( $entry->[1] ) && length( $entry->[1] );
+
+	print join( "  ", map { join( " ", @$_ ) } @$pack ), "\t$id\n";
+}

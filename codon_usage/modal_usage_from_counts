@@ -1,0 +1,91 @@
+#! /usr/bin/perl -w
+#
+#   modal_usage_from_counts  [options] < counts > modal_usage
+#
+
+use strict;
+use gjocodonlib;
+
+my $usage = <<'End_of_Usage';
+
+Usage:  modal_usage_from_counts  [options] < counts > modal_usage
+
+Options:
+
+    -a processes #  Number of evaluation pipes to use (D = 4)
+    -e expon     #  Exponent of chi-square P-value used in optimizing modal
+                 #     frequencies (D = 0.3)
+    -m max_len   #  Cut-off length when scoring by p-value
+    -n n_vert    #  Default number of vertices (D = 75)
+    -p p-value   #  Evaluate the final frequencies for p >= p-value
+    -t title     #  Title associated with frequencies
+    -v min_vert  #  Minimum number of vertices in simplex optimization of the
+                 #     modal usage (D = 50).  Only has effect with fewer than
+                 #     vertices genes.  Default seems as good as anything.
+
+End_of_Usage
+
+my $expon    =     0.3;
+my $max_len  = undef;
+my $n_vert   =    75;
+my $p_val    = undef;
+my $pipes    =     4;
+my $title    = undef;
+my $min_vert =    50;
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^a// ) { $pipes    = $_ || shift; next }
+    if ( s/^e// ) { $expon    = $_ || shift; next }
+    if ( s/^m// ) { $max_len  = $_ || shift; next }
+    if ( s/^n// ) { $n_vert   = $_ || shift; next }
+    if ( s/^p// ) { $p_val    = $_ || shift; next }
+    if ( s/^t// ) { $title    = $_ || shift; next }
+    if ( s/^v// ) { $min_vert = $_ || shift; next }
+
+    if ( /./ )
+    {
+        print STDERR "Bad flag '$_'\n", $usage;
+        exit;
+    }
+}
+
+if ( $min_vert < 50 )
+{
+    print STDERR "WARNING: Minimum number of vertices reset from $min_vert to 50.\n";
+    $min_vert = 50;
+}
+
+$n_vert = $min_vert if ( $min_vert > $n_vert );
+
+my @counts = map { chomp; scalar gjocodonlib::split_counts( $_ ) } <>;
+@counts or print STDERR "Failed to read codon counts from STDIN.\n", $usage
+        and exit;
+
+#  Temporary files for mode calculations:
+
+my $root_name = sprintf( 'modal_usage_tmp_%09d', int(1e9*rand()) );
+my $options = { expon    => $expon,
+                n_top    => $n_vert,
+                pipes    => $pipes,
+                root     => $root_name,
+                vertices => $min_vert
+              };
+
+my ( $score, $freq ) = gjocodonlib::modal_codon_usage( \@counts, $options );
+
+if ( $p_val )
+{
+    my $opt2 = { count_file => "$root_name.counts", p_value =>  $p_val };
+    $opt2->{ max_length } = $max_len if $max_len;
+    my ( $scored ) = gjocodonlib::score_codon_frequencies( [ $freq ], \@counts, $opt2 );
+    $score = $scored->[0];
+}
+else
+{
+    $score = sprintf( '%.6f', $score );
+}
+
+gjocodonlib::report_frequencies( $score, $freq, $title ? $title : () );
+

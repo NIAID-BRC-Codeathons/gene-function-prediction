@@ -1,0 +1,274 @@
+#! /usr/bin/perl -w
+#
+#  These programs should be installed and accessible through the user's PATH:
+#
+#      blastall
+#      formatdb
+#
+#  These programs are supplied as C source code, and can dramatically improve
+#  performance if they are compiled and accessible through the user's path:
+#
+#      codon_counts_x_and_p
+#      codon_freq_eval_2
+#      project_codon_usage_onto_axis
+#
+
+use strict;
+use gjocodonlib        qw( report_frequencies );
+use gjonativecodonlib  qw( native_codon_usage );
+use gjoseqlib          qw( read_fasta );
+# use Data::Dumper;
+
+
+my $usage = <<"End_of_Usage";
+native_codon_usage - estimate the native (modal and high expression)
+   codon usages of the protein coding genes in a genome.
+
+Usage:
+
+   native_codon_usage [opts] < DNA_file > genome_mode \\n high_expr_mode
+
+   DNA_file is an NCBI .ffn file of coding sequences, or equivalent.
+   Each sequence should include the initiator codon (which will be removed).
+   If terminator codons are present, they are automatically removed.
+
+Options:
+
+    -a                #  all high expression estimates are output, not just the
+                      #     final one
+    -A                #  include genome average as first codon usage
+    -b bbh_blast_opts #  blast flags, preferably wrapped in single quote marks
+    -B                #  compute the significance of high expression bias
+                      #     (implicitly sets -n 0 -o 1)
+    -c bbh_min_cover  #  blast coverage required for bbh (D = 0.7)
+    -d min_nonmodal   #  minimum fraction of candidate high expression genes
+                      #     that must differ from the genome mode for the
+                      #     mode calculation to be iterated (D = 0.20)
+    -e bbh_max_e_val  #  blast e-value maximum for bbh (D = 1e-5)
+    -E mode_exponent  #  exponent used in genome mode calculation (D = 0.3)
+    -f counts_file    #  save the gene codon counts (with id and description)
+                      #     to the named file (default extension is .counts)
+    -g                #  exclude the genome mode from the output
+    -h he_ref_module  #  name of perl module containing the high expression
+                      #     reference sequences (D = high_expression_ref_ab,
+                      #     which includes an archaeon and a bacterium)
+    -H initial_he_ids #  a file containing the ids of genes to be used as an
+                      #     initial high expression codon usage estimate
+                      #     (file can be raw ids, counts, or fasta)
+    -i bbh_identity   #  blast sequence identity for bbh (D = 0.2)
+    -k max_keep       #  number of high expression candidates to pass to next
+                      #     iteration. A value less than 1 is taken as the
+                      #     fraction of input genes (D = 0.1)
+    -l p_val_max_len  #  max codons for P-value calculations (D = inf)
+    -m min_he_genes   #  minimum number of high expression genes (D = 20)
+    -n max_iter       #  number of rounds of refinement to perform, not
+                      #     counting the original estimate from the
+                      #     bidirectional best hits (D = 2)
+    -o omit_p_value   #  omit genes matching genome mode at P-value (D = 0.1)
+    -p match_p_value  #  min P-value for reporting match to a mode (D = 0.1)
+    -q                #  quiet mode (fewer status messages)
+    -r reach_p_value  #  min match to axis P-value for inclusion in next high
+                      #     expression estimate (D = 0.05)
+    -s bbh_positives  #  blast positives (similar aa) for bbh (D = 0.3)
+    -t genome_title   #  label to be added to analysis results
+    -v                #  print the version to stdout and exit
+    -x min_x_value    #  min value of x for use in next estimate (D = 0.5)
+    -?                #  print usage and details of the algorithm used, then
+                      #     terminate (? is a shell metacharacter, so use -\\?)
+
+External Programs Used:
+
+   These programs should installed and accessible through the user's path:
+
+       blastall
+       formatdb
+
+   These programs are supplied as C source code, and can dramatically improve
+   performance if they are compiled and accessible through the user's path:
+
+       codon_counts_x_and_p
+       codon_freq_eval_2
+       project_codon_usage_onto_axis
+
+End_of_Usage
+
+
+my $max_he_decline   =  0.20;   # < 20% decline in finding original he candidates
+my $max_mode_overlap =  0.80;   # < 80% of genes matching he can match mode
+my $version          = '1.00';
+
+#  Parameters that the user can change:
+
+my $all_he_modes     =     0;      # by default, just last mode
+my $average          = undef;      # add average codon usage
+my $bbh_blast_opts   =    '';
+my $bbh_coverage     =     0.70;   # bbh covers 70% of gene
+my $bbh_e_value      =  1e-5;      # bbh match at least 1e-5 (could relax a little)
+my $bbh_identity     =     0.20;   # bbh 20% amino acid identity 
+my $bbh_positives    =     0.30;   # bbh 30% amino acids with positive score
+my $bias_stats       = undef;
+my $counts_file      =    '';      # don't save the counts
+my $excl_gen_mode    =     0;      # give both mode and high expression
+my $genome_title     =    '';      # no default title
+my $he_ref_module    = 'high_expression_ref_ab'; # Archaea and Bacteria
+my $initial_he_ids   = undef;      # find candidates by bidir best hits
+my $match_p_value    =     0.10;   #
+my $max_iter         =     2;      # original estimate and 2 refinements
+my $max_keep         =     0.10;   # 10% of the genome
+my $min_he_genes     =    20;      # don't estimate with < 20 bbh genes
+my $min_nonmodal     =     0.20;   # 20% of candidates differ from genome mode
+my $min_x_value      =     0.50;   #
+my $mode_exponent    =     0.30;   # exponent of P-value in mode calculation
+my $omit_p_value     =     0.10;   # P > 0.1 to mode for omission from he calc
+my $p_val_max_len    = undef;      # no limit on length in chi-square
+my $quiet            =     0;      # a lot of diagnostic messages to STDERR
+my $reach_p_value    =     0.05;   # allow direction to drift
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^b// ) { $bbh_blast_opts = /\S/ ? $_ : shift; next }
+    if ( s/^c// ) { $bbh_coverage   = /\S/ ? $_ : shift; next }
+    if ( s/^d// ) { $min_nonmodal   = /\S/ ? $_ : shift; next }
+    if ( s/^e// ) { $bbh_e_value    = /\S/ ? $_ : shift; next }
+    if ( s/^E// ) { $mode_exponent  = /\S/ ? $_ : shift; next }
+    if ( s/^f// ) { $counts_file    = /\S/ ? $_ : shift; next }
+    if ( s/^h// ) { $he_ref_module  = /\S/ ? $_ : shift; next }
+    if ( s/^H// ) { $initial_he_ids = /\S/ ? $_ : shift; next }
+    if ( s/^i// ) { $bbh_identity   = /\S/ ? $_ : shift; next }
+    if ( s/^k// ) { $max_keep       = /\S/ ? $_ : shift; next }
+    if ( s/^l// ) { $p_val_max_len  = /\S/ ? $_ : shift; next }
+    if ( s/^m// ) { $min_he_genes   = /\S/ ? $_ : shift; next }
+    if ( s/^n// ) { $max_iter       = /\S/ ? $_ : shift; next }
+    if ( s/^o// ) { $omit_p_value   = /\S/ ? $_ : shift; next }
+    if ( s/^p// ) { $match_p_value  = /\S/ ? $_ : shift; next }
+    if ( s/^r// ) { $reach_p_value  = /\S/ ? $_ : shift; next }
+    if ( s/^s// ) { $bbh_positives  = /\S/ ? $_ : shift; next }
+    if ( s/^t// ) { $genome_title   = /\S/ ? $_ : shift; next }
+    if ( s/^x// ) { $min_x_value    = /\S/ ? $_ : shift; next }
+
+    if ( s/\?//g )
+    {
+        print STDERR $usage;
+        print STDERR gjonativecodonlib::native_codon_usage( { algorithm => 1 } );
+        exit;
+    }
+    if ( s/a//g ) { $all_he_modes  = 1 }
+    if ( s/A//g ) { $average       = 1 }
+    if ( s/B//g ) { $bias_stats    = 1 }
+    if ( s/g//g ) { $excl_gen_mode = 1 }
+    if ( s/q//g ) { $quiet         = 1 }
+    if ( s/v//g ) { print "$version\n"; exit }
+    if ( m/./ )   { print STDERR "Bad flag '$_'\n", $usage; exit }
+}
+
+# Redundant with functionality built into the library, but ...
+
+if ( $bias_stats ) { $max_iter = 0; $omit_p_value = 1 }
+
+my $log_label = $quiet        ? undef
+              : $genome_title ? $genome_title
+              : $counts_file  ? $counts_file
+              :                 'unidentified genome';
+$log_label =~ s/\.counts$// if $log_label;
+
+#-------------------------------------------------------------------------------
+#  Read DNA sequences:
+#-------------------------------------------------------------------------------
+
+my @dna = gjoseqlib::read_fasta( \*STDIN );
+
+@dna or print STDERR "Failed to read DNA sequences from STDIN.\n\n", $usage
+        and exit;
+
+#-------------------------------------------------------------------------------
+#  Read high expression ids if supplied:
+#-------------------------------------------------------------------------------
+
+my @initial_he_ids;
+if ( $initial_he_ids )
+{
+    -f $initial_he_ids
+        or print STDERR "Could not locate initial_he_ids file '$initial_he_ids'.\n", $usage
+            and exit;
+    open HEID, "<$initial_he_ids"
+        or print STDERR "Could not open initial_he_ids file '$initial_he_ids'.\n", $usage
+            and exit;
+
+    #  Let's guess a format
+
+    $_ = <HEID>;
+    if ( /^\d+( +\d+){58..60}\t\S/ )   # counts
+    {
+        @initial_he_ids = grep { s/^[\d ]+\t(\S+).*$/$1/ } ( $_, <HEID> );
+    }
+    elsif ( /^>\S/ )                   #  fasta
+    {
+        @initial_he_ids = grep { s/^>(\S+).*$/$1/ } ( $_, <HEID> );
+    }
+    else                               #  raw ids
+    {
+        @initial_he_ids = grep { s/^(\S+).*$/$1/ } ( $_, <HEID> );
+    }
+
+    @initial_he_ids
+        or print STDERR "No data in initial_he_ids file '$initial_he_ids'.\n", $usage
+            and exit;
+
+    my %dna_ids = map { $_->[0] => 1 } @dna;
+    my @not_in_dna = grep { ! $dna_ids{ $_ } } @initial_he_ids;
+    if ( @not_in_dna )
+    {
+        print STDERR "IDs in initial_he_ids file '$initial_he_ids', but not in DNA:\n";
+        foreach ( @not_in_dna ) { print STDERR "    $_\n" }
+        print STDERR "\n";
+    }
+}
+
+#-------------------------------------------------------------------------------
+#  Set up the calling parameter hash and call analysis routine:
+#-------------------------------------------------------------------------------
+
+my $param = {};
+
+#  Required:
+
+$param->{ dna } = \@dna;
+
+#  Optional:
+
+$param->{ all_he_modes }     =  $all_he_modes      if defined( $all_he_modes );
+$param->{ average }          =  $average           if defined( $average );
+$param->{ bbh_blast_opts }   =  $bbh_blast_opts    if defined( $bbh_blast_opts );
+$param->{ bbh_coverage }     =  $bbh_coverage      if defined( $bbh_coverage );
+$param->{ bbh_e_value }      =  $bbh_e_value       if defined( $bbh_e_value );
+$param->{ bbh_identity }     =  $bbh_identity      if defined( $bbh_identity );
+$param->{ bbh_positives }    =  $bbh_positives     if defined( $bbh_positives );
+$param->{ bias_stats }       =  $bias_stats        if defined( $bias_stats );
+$param->{ counts_file }      =  $counts_file       if          $counts_file;
+$param->{ genome_title }     =  $genome_title      if          $genome_title;
+$param->{ he_ref_module }    =  $he_ref_module     if defined( $he_ref_module );
+$param->{ initial_he_ids }   = \@initial_he_ids    if          @initial_he_ids;
+$param->{ log_label }        =  $log_label         if defined( $log_label );
+$param->{ match_p_value }    =  $match_p_value     if defined( $match_p_value );
+$param->{ max_he_decline }   =  $max_he_decline    if defined( $max_he_decline );
+$param->{ max_iter }         =  $max_iter          if defined( $max_iter );
+$param->{ max_keep }         =  $max_keep          if defined( $max_keep );
+$param->{ max_mode_overlap } =  $max_mode_overlap  if defined( $max_mode_overlap );
+$param->{ min_he_genes }     =  $min_he_genes      if defined( $min_he_genes );
+$param->{ min_nonmodal }     =  $min_nonmodal      if defined( $min_nonmodal );
+$param->{ min_x_value }      =  $min_x_value       if defined( $min_x_value );
+$param->{ mode_exponent }    =  $mode_exponent     if defined( $mode_exponent );
+$param->{ omit_p_value }     =  $omit_p_value      if defined( $omit_p_value );
+$param->{ p_val_max_len }    =  $p_val_max_len     if defined( $p_val_max_len );
+$param->{ reach_p_value }    =  $reach_p_value     if defined( $reach_p_value );
+
+#  Returned modes are [ mode, label ]
+
+my @modes = gjonativecodonlib::native_codon_usage( $param );
+
+exit if ! @modes;
+
+shift @modes if $excl_gen_mode;
+
+foreach ( @modes ) { gjocodonlib::report_frequencies( @$_ ) }

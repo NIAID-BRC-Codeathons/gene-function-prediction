@@ -1,0 +1,196 @@
+##############################################################################
+#
+#  Copyright (c) 2009-2010 Gary J. Olsen
+#
+##############################################################################
+Perl programs:
+================================================================================
+
+The following perl programs are included:
+
+    average_codon_freqs
+    codon_freq_eval_pl
+    compile_codon_counts
+    compile_codon_freqs
+    filter_codon_counts
+    freqs_2_dists
+    freqs_2_nj_tree
+    modal_codon_usage
+    native_codon_usage
+    project_codon_usage_onto_axis_pl
+    score_codon_counts
+    score_codon_freqs
+    score_codon_freqs_pl
+    sketch_tree
+
+Executable programs should be in a directory that is part of your exectuable
+search "path".  In some cases this is essential, in others it is just useful.
+
+As distributed, the first line of the perl programs is:
+
+   #! /usr/bin/perl
+
+or
+
+   #! /usr/bin/perl -w
+
+If perl is installed somewhere else on your system, you will need to change
+this line, or add a symbolic link in the /usr/bin directory.  You should be
+able to locate perl with the command 'which perl'.  Although the programs
+should normally run without emitting warnings, if they do, you might want to
+remove the -w flag.
+
+Mulitprocessing:
+
+A few of the programs attempt to determine whether there are multiple CPU's
+avaialable.  This has only been tested under Mac OS X.  If this creates
+problems (such as, a program that hangs without using any CPU time), please
+let me know the situation.  I will probably ask you to run some simple tests
+to help me isolate the problem.  Generally the programs that do this have a
+command line flag that can be used to disable the behavior.
+
+The SEED:
+
+Much of this code is written to be "aware" of when it is running in the SEED
+environment (Overbeek, R., Begley, T., Butler, R. M., Choudhuri, J. V.,
+Chuang, H.-Y., Cohoon, M., de Crécy-Lagard, V., Diaz, N., Disz, T.,
+Edwards, R., Fonstein, M., Frank, E. D., Gerdes, S., Glass, E. M.,
+Goesmann, A., Hanson, A., Iwata-Reuyl, D., Jensen, R., Jamshidi, N.,
+Krause, L., Kubal, M., Larsen, N., Linke, B., McHardy, A. C., Meyer, F.,
+Neuweger, H., Olsen, G., Olson, R., Osterman, A., Portnoy, V., Pusch, G. D.,
+Rodionov, D. A., Rückert, C., Steiner, J., Stevens, R., Thiele, I.,
+Vassieva, O., Ye, Y., Zagnitko, O., and Vonstein, V.  2005.  The subsystems
+approach to genome annotation and its use in the project to annotate 1,000
+genomes.  Nucleic Acids Res. 33: 5691-5702. PMID: 16214803; PMCID: PMC1251668).
+As above, this should not create a problem, but if you get messages about
+missing modules, please let me know.  Such a message might look like:
+
+   Can't locate FIG_Config.pm in @INC (@INC contains: ... )
+
+If the message is about any of the modules in the list below, the problem
+is in your location of the modules, or your setting the PERLLIB variable.
+
+
+================================================================================
+Perl modules:
+================================================================================
+
+Most of the perl programs above require one or more of the following perl
+modules:
+
+    bidir_best_hits.pm
+    gjocodonlib.pm
+    gjonativecodonlib.pm
+    gjonewicklib.pm
+    gjoparseblast.pm
+    gjophylip.pm
+    gjosegmentlib.pm
+    gjoseqlib.pm
+    gjostat.pm
+    high_expression_ref_ab.pm
+
+The easiest way to ensure that perl can find them is to set a shell variable
+called PERLLIB to include the directory where these are placed.  If you have
+a standard location of perl modules, then it is easiest to put these in that
+location.  Otherwise you can put them where you want and use the value of
+PERLLIB to instruct perl where to look.  Thus, if you place the modules in
+/usr/local/bin, then in csh or tcsh you might use the command:
+
+    set PERLLIB=/usr/local/bin
+
+or, if PERLLIB is already set,
+
+    set PERLLIB=$PERLLIB:/usr/local/bin
+
+In sh or bash you might use the command:
+
+    export PERLLIB=/usr/local/bin
+
+or, if PERLLIB is already set,
+
+    export PERLLIB=$PERLLIB:/usr/local/bin
+
+
+
+================================================================================
+C programs:
+================================================================================
+
+There are three programs in the package that are written in C for speed (it
+makes a huge difference in finding the mode, and genes matching the native
+codon usage axis).  They are:
+
+    codon_counts_x_and_p.c
+    codon_freq_eval_2.c
+    project_codon_usage_onto_axis.c
+
+
+The following two files are included by the above, so they must be in the
+same directory when compiling (see below):
+
+    gjocodonlib.c
+    gjocodonlib.h
+
+These three programs are not directly accessed by the user, but are called by
+other programs.  If these program cannot be found, the program attempting to
+run it should still run, but much more slowly.
+
+Directories with compiled executable files:
+
+    i386_osx_10.4
+    i386_osx_10.5
+    ppc_osx_10.4
+
+There are 3 directories supplied with the package that include compiled binary
+files for the program.  The names of the directories reflect the CPU and
+OS X version for which they were compiled.  The PowerPC (ppc_osx_10.4) version
+should run on both architectures (PowerPC and Intel), and both OS X 10.4 and
+10.5.  The Intel OS X 10.4 (i386_osx_10.4) version should run on Intel CPU
+machines with OS X 10.4 or later.  The Intel OS X 10.5 (i386_osx_10.5) version
+should run on Intel CPU machines with OS X 10.5 or later.  An appropriate
+binary should be copied out of its subdirectory, into the directory with the
+perl executable files.
+
+Compiling:
+
+If there is need to recompile (for example another Unix platform), there is
+no make file, just a generic compile and link with the math library.  Thus,
+the following 3 commands should produce executables on any system with a
+C compiler:
+
+    cc -O codon_counts_x_and_p.c -o codon_counts_x_and_p -lm
+    cc -O codon_freq_eval_2.c -o codon_freq_eval_2 -lm
+    cc -O project_codon_usage_onto_axis.c -o project_codon_usage_onto_axis -lm
+
+That should do it.
+
+Testing:
+
+If you want to test them, they each should give their version number when
+run with a -v flag:
+
+    codon_counts_x_and_p -v
+    codon_freq_eval_2 -v
+    project_codon_usage_onto_axis -v
+
+The program should print its version number and quit, without error.
+
+
+================================================================================
+Updates:
+================================================================================
+
+Updates to the programs and libraries can be accessed through the WWW site:
+
+    http://www.life.illinois.edu/gary/programs.html
+
+================================================================================
+Bugs:
+================================================================================
+
+Send bug reports to: gary @ life . illinois . edu
+
+Please include information on what you were doing, and the exact message that
+you got when things went wrong.  If possible, reproduce the problem with a
+small data set and include the data with the report.
+

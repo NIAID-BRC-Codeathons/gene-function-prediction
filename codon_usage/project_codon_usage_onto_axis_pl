@@ -1,0 +1,63 @@
+#! /usr/bin/perl -w
+
+use strict;
+use gjostat;
+use gjocodonlib;
+use Data::Dumper;
+
+my $usage = <<"End_of_Usage";
+Usage:
+
+   project_codon_usage_onto_axis_pl [options] counts < freq_pairs > x_tab_p
+
+Options:
+
+    -l length_limit   # for P-value calculations (D = inf)
+    -v                # print version and exit
+
+End_of_Usage
+
+my $length_limit = 1e99;
+my $version      = "1.00"; 
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift @ARGV;
+    if ( s/^l// ) { $length_limit  = $_ || shift @ARGV; next }
+
+    if ( s/v//g ) { print "$version\n"; exit }
+    if ( m/./ )    { print STDERR "Bad flag '$_'\n$usage"; exit }
+}
+
+@ARGV == 1 or usage();
+
+my $file = shift @ARGV;
+-f $file and open( CNTS, "<$file" )
+          or die "Could not find or open codon counts file '$file'\n";
+my @counts = map { chomp; scalar gjocodonlib::split_counts( $_ ) } <CNTS>;
+close CNTS;
+
+@counts or die "No codon counts found in '$file'\n";
+
+{ my $old = select STDOUT; $| = 1; select $old; }  # Autoflush output lines
+
+my ( $freq1, $freq2, $id, $scr );
+
+while ( <> )
+{
+    chomp;
+    $freq1 = gjocodonlib::split_frequencies( $_ );
+    exit if ! $freq1;
+    exit if ! defined( $_ = <> );
+    chomp;
+    $freq2 = gjocodonlib::split_frequencies( $_ );
+    exit if ! $freq2;
+
+    my @x_and_p = map { my ( $x, $chisqr, $df, $len ) =  @$_;
+                        $chisqr *= $length_limit / $len if $len > $length_limit;
+                        [ $x, ( $df ? gjostat::chisqr_prob( $chisqr, $df ) : 1 ) ]
+                      }
+                  project_on_freq_vector_by_chi_sqr_2( $freq1, $freq2, @counts );
+
+    foreach ( @x_and_p ) { printf( "%.3f\t%.2e\n", @$_ ) }
+}

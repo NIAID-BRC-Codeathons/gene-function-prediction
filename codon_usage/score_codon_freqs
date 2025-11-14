@@ -1,0 +1,99 @@
+#! /usr/bin/perl -w
+
+use strict;
+
+my $usage = <<'End_of_usage';
+Score a set of codon counts, allowing the evaluation to be done in one or
+more pipes that invoke (if available) a program written in C.
+
+   score_codon_freqs [opts] CDS_cnts_file  < freqs_file  > score_tab_freqs
+
+Options:
+
+   -a pipes     #  Attempt to run concurrent pipes (processes) (D = 4)
+   -e exponent  #  Score by sum of p**exponent (D = 0.3)
+   -l max_len   #  Limit effective length of gene in computing chi-square.
+   -p p_value   #  Score by number of genes with p >= p_value
+   -s           #  Omit frequencies from output (scores only)
+   -v           #  Report progress to STDERR
+
+Read a set of frequencies from STDIN, and output a corresponding set of
+usage scores relative to CDS_counts.  By default, each score is the sum
+over all genes of the chi-square p-value raised to the power 'exponent'
+(D = 0.3) for the gene matching the frequencies.  If a p_value is
+supplied, each score is the count of genes with P >= p_value, that is,
+the count of genes matching the frequencies.
+
+Example of flow (assuming that E_coli_K12.dna has orf DNA sequences):
+
+   set g=E_coli_K12
+   compile_codon_counts < $g.dna > $g.counts
+   compile_codon_freqs  < $g.dna > $g.freqs
+   score_codon_freqs_x  $g.counts < $g.freqs  > $g.scored_freqs
+
+End_of_usage
+
+use gjocodonlib;
+use gjoseqlib;
+
+my $p_val;
+my $expon    = 0.3;
+my $max_l    = 0;
+my $pipes    = 4;
+my $scr_only = 0;
+my $verbose  = 0;
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^a// ) { $pipes = $_ || shift; next }
+    if ( s/^e// ) { $expon = $_ || shift; next }
+    if ( s/^l// ) { $max_l = $_ || shift; next }
+    if ( s/^p// ) { $p_val = $_ || shift; next }
+
+    if ( s/s//g ) { $scr_only =    1 }
+    if ( s/v//g ) { $verbose  = 1000 }
+    if ( m/./ )
+    {
+        print STDERR "Bad flag: '$_'\n", $usage;
+        exit;
+    }
+}
+
+@ARGV == 1 or print STDERR "Missing counts file.\n\n", $usage and exit;
+
+#  Open the evaluation pipe:
+
+my $file = shift @ARGV;
+-f $file or print STDERR "Could not find CDS counts file $file\n", $usage and exit;
+
+my $options = { pipes    => $pipes,
+                file     => $file,
+                exponent => $expon,
+                max_len  => $max_l,
+                p_value  => $p_val,
+                verbose  => $verbose,
+              };
+
+my @freqs;
+my %ids;
+while ( <> )
+{
+    chomp;
+    my ( $freq, undef, $id ) = gjocodonlib::split_frequencies( $_ );
+    next if ! $freq;
+    $ids{ $freq } = $id if $id;
+    push @freqs, $freq;
+}
+
+my @scored = gjocodonlib::score_codon_frequencies( \@freqs, $options );
+
+my $fstr = '';
+foreach ( @scored )
+{
+    my ( $score, $freq ) = @$_;
+    my $id = $ids{ $freq };
+    $fstr =  "\t" . gjocodonlib::frequencies_as_string( $freq ) . ( $id ? "\t$id" : '' ) if ! $scr_only;
+    if ( $p_val ) { printf "%d%s\n",   $score, $fstr }
+    else          { printf "%.3f%s\n", $score, $fstr }
+}

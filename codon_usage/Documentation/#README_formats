@@ -1,0 +1,184 @@
+##############################################################################
+#
+#  Copyright (c) 2009-2010 Gary J. Olsen
+#
+##############################################################################
+
+Codon usage file formats
+
+average codon frequences (.avg_freq or .avg_freqs)
+CDS_file (.ffn or .dna or .seq)
+coding_sequences (.ffn or .dna or .seq)
+codon_counts (.count or .counts)
+codon_frequencies (.freq or .freqs)
+distances (.dist or .dists)
+modal frequencies (.mode)
+
+================================================================================
+average codon frequences (.avg_freq or .avg_freqs)
+
+See codon_frequencies (below).
+================================================================================
+CDS_file (.ffn or .seq or .dna)
+coding_sequences (.ffn or .seq or .dna)
+
+All sequence data are expected to be in fasta file format.  Some programs may
+preserve the first word on the definition line as an identifier of the original
+sequence.
+
+Generally, the first triplet is ignored, and the last triplet is dropped if it
+is a traditional stop codon.  All programs consider upper and lower case as
+equivalent, and will accept both the DNA and RNA nucleotides.
+
+================================================================================
+codon_counts (.count or .counts)
+
+Each line reports the counts of each of the 61 amino acid codon types, grouped
+by amino acid, for a given sequence.  All data for a given sequence are
+reported on one line.  The amino acid order is:
+
+    A C D E F G H I K L N P Q R S T V Y M W
+
+Codon order for each amino acid is defined by this perl code fragment:
+
+         A  => [ qw( GCA GCG GCT GCC ) ],
+         C  => [ qw( TGT TGC ) ],
+         D  => [ qw( GAT GAC ) ],
+         E  => [ qw( GAA GAG ) ],
+         F  => [ qw( TTT TTC ) ],
+         G  => [ qw( GGA GGG GGT GGC ) ],
+         H  => [ qw( CAT CAC ) ],
+         I  => [ qw( ATA ATT ATC ) ],
+         K  => [ qw( AAA AAG ) ],
+         L  => [ qw( TTA TTG CTA CTG CTT CTC ) ],
+         N  => [ qw( AAT AAC ) ],
+         P  => [ qw( CCA CCG CCT CCC ) ],
+         Q  => [ qw( CAA CAG ) ],
+         R  => [ qw( AGA AGG CGA CGG CGT CGC ) ],
+         S  => [ qw( AGT AGC TCA TCG TCT TCC ) ],
+         T  => [ qw( ACA ACG ACT ACC ) ],
+         V  => [ qw( GTA GTG GTT GTC ) ],
+         Y  => [ qw( TAT TAC ) ],
+         M  => [ qw( ATG ) ],
+         W  => [ qw( TGG ) ],
+
+Codons of a given amino acid type are separated by exactly one blank space.
+Codons of differing amino acids are separated by exactly two blank spaces.
+Thus for 18 and 20 amino acids, the codon counts are reported as:
+
+nGCA nGCG nGCT nGCC  nTGT nTGC  nGAT nGAC  ...  nTAT nTAC
+
+nGCA nGCG nGCT nGCC  nTGT nTGC  nGAT nGAC  ...  nTAT nTAC  nATG  nTGG
+
+where nNNN is the number of occurances of the triplet NNN.
+
+Optionally, the frequencies on a line can be followed by a tab character and
+a description or definition of the data on the line.  Some programs use this
+information to label results.
+
+================================================================================
+codon_frequencies (.freq or .freqs)
+
+Each line reports the relative codon usage frequencies of either 18 or 20
+amino acid types, grouped by amino acid, for a given sequence.  All data
+for a given sequence are reported on one line.  The amino acid order is:
+
+    A C D E F G H I K L N P Q R S T V Y
+
+or
+
+    A C D E F G H I K L N P Q R S T V Y M W
+
+Codon order for each amino acid is defined by this perl code fragment:
+
+         A  => [ qw( GCA GCG GCT GCC ) ],
+         C  => [ qw( TGT TGC ) ],
+         D  => [ qw( GAT GAC ) ],
+         E  => [ qw( GAA GAG ) ],
+         F  => [ qw( TTT TTC ) ],
+         G  => [ qw( GGA GGG GGT GGC ) ],
+         H  => [ qw( CAT CAC ) ],
+         I  => [ qw( ATA ATT ATC ) ],
+         K  => [ qw( AAA AAG ) ],
+         L  => [ qw( TTA TTG CTA CTG CTT CTC ) ],
+         N  => [ qw( AAT AAC ) ],
+         P  => [ qw( CCA CCG CCT CCC ) ],
+         Q  => [ qw( CAA CAG ) ],
+         R  => [ qw( AGA AGG CGA CGG CGT CGC ) ],
+         S  => [ qw( AGT AGC TCA TCG TCT TCC ) ],
+         T  => [ qw( ACA ACG ACT ACC ) ],
+         V  => [ qw( GTA GTG GTT GTC ) ],
+         Y  => [ qw( TAT TAC ) ],
+         M  => [ qw( ATG ) ],
+         W  => [ qw( TGG ) ],
+
+When 20 amino acids are reported, ATG and TTG each have a frequency of 1.
+Codons of a given amino acid type are separated by a comma (,).
+Codons of differing amino acids are separated by a vertical bar (|).
+Thus, for 18 and 20 amino acids, the codon frequencies are reported as:
+
+fGCA,fGCG,fGCT,fGCC|fTGT,fTGC|fGAT,fGAC|...|fTAT,fTAC
+
+fGCA,fGCG,fGCT,fGCC|fTGT,fTGC|fGAT,fGAC|...|fTAT,fTAC|fATG|fTGG
+
+where fNNN is the relative frequencies of the triplet NNN among the codons
+for the particular amino acid.  Thus, fATG and fTGG are always 1.
+
+Optionally, the frequencies on a line can be preceded by a numerical score and
+a tab character.  This form is used to allow tagging a set of frequencies by
+their respective scores.  Most programs that use frequencies ignore the scores
+provided with them.
+
+Optionally, the frequencies on a line can be followed by a tab character and
+a description or definition of the data on the line.  Some programs use this
+information to label results.
+
+================================================================================
+count_p_values
+
+The output of score_codon_counts is the evaluation of how well each CDS in a
+codon_counts file matches each set of relative codon usage frequencies in a
+codon_frequencies file.  The output is white space separated p-values, one
+value per set of frequencies, and one row per line in the counts file.
+
+If there is an identifier after the counts, it is reported after the p-values.
+
+================================================================================
+distances (.dist or .dists)
+
+The output of the freqs_2_dists program is pairwise distances between all
+pairs of relative codon usage frequencies in the input file.  The distance
+file is in PHYLIP distance file format.  The first line includes the number
+of sets of frequencies.  Each subsequent line reports the name of the
+frequency set (taken from the field flowing the frequency data), and then
+the distance to all of the frequency sets (thus it is the symetrical format
+in which each distance is reported twice).
+
+Unless otherwise indicated, the distances are calculated by the formula:
+
+The distance calculation proceeds by amino acid.  For a given amino acid,
+the sum of absolute differenes of codon frequencies is squared, and the
+results are summed over amino acids.
+                       ____             ____
+                  1   \                \
+   distance2**2 = - *  |            [   |    abs( f1(c) - f2(c) ) ]**2
+                  4   /___             /___
+                    a = amino acids  c = codons for amino acid a
+
+Note the that the distance is the square root of each side.  This is a
+Manhattan metric distance between the codons usage within an amino acid,
+and a Euclidian distance between the amino acids.
+
+================================================================================
+modal (optimal) frequencies (.opt_freq or .opt_freqs)
+
+See codon_frequencies (above).
+================================================================================
+scores
+
+The codon_freq_eval_2 program writes scores for one or more sets of codon
+usage frequencies to stdout, one per line.  The type of score depends on
+the program options.
+
+The program is accessed internally by a number of others, and is not generally
+used as a stand-alone program, so the file is generally never seen.

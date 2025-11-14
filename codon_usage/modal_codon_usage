@@ -1,0 +1,126 @@
+#! /usr/bin/perl -w
+#
+#   modal_codon_usage  < dna_fasta  > modal_codon_usage_frequencies
+#
+use strict;
+use gjocodonlib qw( codon_freq_score
+                    count_to_freq
+                    entry_labeled_codon_count_package
+                    modal_codon_usage
+                    report_counts
+                    report_frequencies
+                    sum_counts
+                  );
+use gjoseqlib   qw( read_fasta );
+use Data::Dumper;
+
+my $usage = <<'End_of_Usage';
+
+Usage:  modal_codon_usage [ optionss ] < dna_fasta  > modal_freqs
+
+   Options:
+
+      -A               #  include average codon frequencies
+      -e mode_exponent #  set the p-value exponent used in optimizing (D = 0.3)
+      -f counts_file   #  save the gene codon counts (with id and description)
+                       #     to the named file (default extension is .counts)
+      -l p_val_max_len #  max codons for P-value calculations (D = inf)
+      -p match_p_value #  set the p-value threshold used in scoring (D = 0.1)
+      -q               #  quiet: do not report scores to STDERR
+      -t genome_title  #  label to be added to analysis results
+
+End_of_Usage
+
+my $average       = undef;    # include average codon usage
+my $counts_file   = undef;    # save counts to named file
+my $genome_title  = '';       # no default title
+my $match_p_value = 0.1;      # p-value for scoring match to mode
+my $mode_exponent = undef;    # exponent for optimizing mode
+my $p_val_max_len = undef;    # limit on length in chi-square
+my $quiet         = undef;    # print scores to STDERR
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^e// ) { $mode_exponent = /\S/ ? $_ : shift; next }
+    if ( s/^f// ) { $counts_file   = /\S/ ? $_ : shift; next }
+    if ( s/^l// ) { $p_val_max_len = /\S/ ? $_ : shift; next }
+    if ( s/^p// ) { $match_p_value = /\S/ ? $_ : shift; next }
+    if ( s/^t// ) { $genome_title  = /\S/ ? $_ : shift; next }
+
+    if ( s/A//g ) { $average = 1 }
+    if ( s/q//g ) { $quiet   = 1 }
+    if ( s/V//g ) { $quiet   = 0 }
+    if ( /./ )
+    {
+        print STDERR "Bad flag '-$_'.\n", $usage;
+        exit;
+    }
+}
+
+#-------------------------------------------------------------------------------
+#  Read DNA sequences:
+#-------------------------------------------------------------------------------
+
+my @dna = gjoseqlib::read_fasta( \*STDIN );
+
+@dna or print STDERR "Failed to read DNA sequences from STDIN.\n", $usage
+        and exit;
+my @labeled_counts = gjocodonlib::entry_labeled_codon_count_package( @dna );
+# print STDERR Dumper( @labeled_counts[0..2] ); exit;
+my @counts = map { $_->[1] } @labeled_counts;
+my $n_gene = @counts;
+
+if ( $counts_file )
+{
+    $counts_file .= '.counts' if $counts_file !~ /\./;
+    open CNTS, ">$counts_file";
+    foreach ( @labeled_counts ) { gjocodonlib::report_counts( \*CNTS, @$_[1,0] ) }
+    close CNTS;
+}
+
+#-------------------------------------------------------------------------------
+#  Set up the calling parameter hash and call analysis routine:
+#-------------------------------------------------------------------------------
+
+my $param = {};
+
+#  Optional:
+
+$param->{ average }    =  $average        if          $average;
+$param->{ count_file } =  $counts_file    if          $counts_file;
+$param->{ exponent }   =  $mode_exponent  if defined( $mode_exponent );
+$param->{ max_length } =  $p_val_max_len  if defined( $p_val_max_len );
+$param->{ p_value }    =  $match_p_value;
+
+my @freqs;
+if ( $average || ! $quiet )
+{
+    my $aver_freq = gjocodonlib::count_to_freq( gjocodonlib::sum_counts( \@counts ), 1 );
+    push @freqs, [ $aver_freq, 'Average frequencies' ];
+}
+
+my $mode = gjocodonlib::modal_codon_usage( \@counts, $param );
+exit if ! $mode;
+
+push @freqs, [ $mode, 'Modal frequencies' ];
+
+if ( $genome_title ) { foreach ( @freqs ) { $_->[1] =~ s/^/$genome_title -- / } }
+
+if ( ! $quiet )
+{
+    foreach ( @freqs ) { score_freq( $_, \@counts, $param ) }
+    shift @freqs if ! $average;
+}
+
+foreach ( @freqs ) { gjocodonlib::report_frequencies( @$_ ) }
+
+exit;
+
+sub score_freq
+{
+    my ( $freq, $cnt, $param ) = @_;
+    my $n_gene = @$cnt;
+    my $score = gjocodonlib::codon_freq_score( $freq->[0], $cnt, $param );
+    printf STDERR "%6d (%4.1f %%) of the genes match %s\n", $score, 100*$score/$n_gene, $freq->[1];
+}

@@ -1,0 +1,91 @@
+#! /usr/bin/perl
+
+use strict;
+
+sub usage
+{
+    print STDERR <<'End_of_usage';
+score_codon_freqs_pl -
+
+Score a set of codon counts, forcing the evaluation to be done entirely with
+perl routines. Generally one would use score_codon_freqs instead.
+
+Usage:
+
+    score_codon_freqs_pl [opts] CDS_cnts_file  < freqs_file  > score_tab_freqs
+
+Options:
+
+   -e exponent  #  Score by sum of p**exponent (D = 0.3)
+   -l max_len   #  Limit effective length of gene in computing chi-square.
+   -p p_value   #  Score by number of genes with p >= p_value
+   -s           #  Omit frequencies from output (scores only)
+   -v           #  Report progress to STDERR
+
+Read a set of frequencies from STDIN, and output a corresponding set of
+usage scores relative to CDS_counts.  By default, each score is the sum
+over all genes of the exponent power of the chi-square P-value for the gene
+matching the frequencies.  If a p_value is supplied, each score is the count
+of genes with p >= p_value, that is, the genes matching the frequencies.
+
+Example of flow (assuming that E_coli_K12.dna has orf dna sequences):
+
+   set g=E_coli_K12
+   compile_codon_counts             < $g.dna    > $g.counts
+   compile_codon_freqs              < $g.dna    > $g.freqs
+   score_codon_freqs_pl  $g.counts  < $g.freqs  > $g.scored_freqs
+
+End_of_usage
+
+    exit;
+}
+
+use gjocodonlib;
+
+my $p_val;
+my $expon    = 0.3;
+my $max_l    = 0;
+my $scr_only = 0;
+my $verbose  = 0;
+
+while ( @ARGV && $ARGV[0] =~ s/^-// )
+{
+    $_ = shift;
+    if ( s/^e// ) { $expon = $_ || shift; next }
+    if ( s/^l// ) { $max_l = $_ || shift; next }
+    if ( s/^p// ) { $p_val = $_ || shift; next }
+
+    if ( s/s//g ) { $scr_only = 1 }
+    if ( s/v//g ) { $verbose  = 1 }
+    if ( m/./ )   { print STDERR "Bad flag: '$_'\n"; usage() }
+}
+
+@ARGV == 1 or usage();
+
+my $file = shift @ARGV;
+-f $file and open( CNTS, "<$file" )
+          or die "Could not find or open codon counts file '$file'\n";
+my @counts = map { chomp; scalar gjocodonlib::split_counts( $_ ) } <CNTS>;
+close CNTS;
+
+@counts or die "No codon counts found in '$file'\n";
+
+{ my $old = select STDOUT; $| = 1; select $old; }  # Autoflush output lines
+
+my $ndone = 0;
+my $fstr = '';
+my ( $freq, $id, $scr );
+
+while ( <> )
+{
+    chomp;
+    ( $freq, undef, $id ) = gjocodonlib::split_frequencies( $_ );
+    next if ! $freq;
+    $scr = gjocodonlib::codon_freq_score_0( $freq, \@counts, $p_val, $expon, $max_l );
+    $fstr =  "\t" . gjocodonlib::frequencies_as_string( $freq ) . ( $id ? "\t$id" : '' ) if ! $scr_only;
+    if ( $p_val ) { printf "%d%s\n",   $scr, $fstr }
+    else          { printf "%.3f%s\n", $scr, $fstr }
+    print STDERR ++$ndone, "\n";
+    print STDERR "$ndone done.\n" if $verbose && ( (++$ndone % 100) == 0 );
+}
+
