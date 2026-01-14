@@ -63,7 +63,7 @@ The scripts used to count k-mers is available in the *kmers* directory.  The scr
 
 The code to actual train models was taken from [here](https://github.com/Tinyman392/GenomicModelCreator).  
 
-#### GenSLM
+#### GenSLM (Alex, Jim, Gary)
 
 Genome Scale Language Models are a family of NA sequence-based large language models.  The goal for this codeathon was to get them incorporated into Huggingface as it would prove to be extremely useful to finetune the model for not only this problem, but many others as well.  Unfortunately we ran into hiccups while getting it set up.  The GitHub for GenSLM is available (here)[https://github.com/ramanathanlab/genslm].  
 
@@ -71,7 +71,7 @@ He was able to show that the hypothetical proteins form a fairly large cluster i
 
 ![](Emb_Hyp_Unc.png)
 
-#### Pangenome Metadata
+#### Pangenome Metadata (Chris)
 
 Chris had started trying to generate a huge vector of metadata over the pangenome to connect to an AI to predict function.  These features included:
 - Gene neighborhood
